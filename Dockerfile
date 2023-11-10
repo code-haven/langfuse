@@ -1,5 +1,5 @@
 # Base image
-FROM node:18-alpine AS base
+FROM --platform=$BUILDPLATFORM node:18-alpine AS base
 ARG DATABASE_URL
 ARG NEXTAUTH_SECRET
 ARG NEXTAUTH_URL
@@ -28,7 +28,7 @@ RUN \
 
 
 # Rebuild the source code only when needed
-FROM base AS builder
+FROM --platform=$BUILDPLATFORM base AS builder
 ARG DATABASE_URL
 ARG NEXTAUTH_SECRET
 ARG NEXTAUTH_URL
