@@ -164,3 +164,4 @@ jobs:
             NEXTAUTH_SECRET=${{ env.NEXTAUTH_SECRET }}
             NEXTAUTH_URL=${{ env.NEXTAUTH_URL }}
             SALT=${{ env.SALT }}
+
