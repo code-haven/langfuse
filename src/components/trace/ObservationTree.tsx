@@ -1,11 +1,12 @@
 import { type NestedObservation } from "@/src/utils/types";
 import { cn } from "@/src/utils/tailwind";
-import { type Trace, type Observation, type Score } from "@prisma/client";
+import { type Trace, type Score } from "@prisma/client";
 import { GroupedScoreBadges } from "@/src/components/grouped-score-badge";
 import { Fragment } from "react";
+import { type ObservationReturnType } from "@/src/server/api/routers/traces";
 
 export const ObservationTree = (props: {
-  observations: Observation[];
+  observations: ObservationReturnType[];
   trace: Trace;
   scores: Score[];
   currentObservationId: string | undefined;
@@ -81,7 +82,7 @@ const ObservationTreeNode = (props: {
         <Fragment key={observation.id}>
           <div className="flex">
             {Array.from({ length: props.indentationLevel }, (_, i) => (
-              <div className="mx-2 border-r" key={i} />
+              <div className="mx-2 border-r lg:mr-4" key={i} />
             ))}
             <div
               className={cn(
@@ -165,7 +166,9 @@ const LevelColor = {
   ERROR: { text: "text-red-800", bg: "bg-red-50" },
 };
 
-export function nestObservations(list: Observation[]): NestedObservation[] {
+export function nestObservations(
+  list: ObservationReturnType[],
+): NestedObservation[] {
   if (list.length === 0) return [];
 
   // Step 1: Create a map where the keys are object IDs, and the values are

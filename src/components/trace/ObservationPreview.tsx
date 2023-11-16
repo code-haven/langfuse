@@ -1,5 +1,5 @@
 import { JSONView } from "@/src/components/ui/code";
-import { type Observation, type Score } from "@prisma/client";
+import { type Score } from "@prisma/client";
 import {
   Card,
   CardContent,
@@ -17,60 +17,77 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { ManualScoreButton } from "@/src/features/manual-scoring/components";
-import type Decimal from "decimal.js";
 import { NewDatasetItemFromObservationButton } from "@/src/features/datasets/components/NewDatasetItemFromObservationButton";
+import { type ObservationReturnType } from "@/src/server/api/routers/traces";
+import { api } from "@/src/utils/api";
+import { z } from "zod";
+import { deepParseJson } from "@/src/utils/json";
+import { cn } from "@/src/utils/tailwind";
+import { useState } from "react";
+import { Button } from "@/src/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
 
 export const ObservationPreview = (props: {
-  observations: Array<Observation & { traceId: string } & { price?: Decimal }>;
+  observations: Array<ObservationReturnType>;
   projectId: string;
   scores: Score[];
-  currentObservationId: string | undefined;
+  currentObservationId: string;
+  traceId: string;
 }) => {
-  const observation = props.observations.find(
+  const observationWithInputAndOutput = api.observations.byId.useQuery({
+    observationId: props.currentObservationId,
+    traceId: props.traceId,
+  });
+
+  const preloadedObservation = props.observations.find(
     (o) => o.id === props.currentObservationId,
   );
-  if (!observation) return <div className="flex-1">Not found</div>;
+
+  if (!preloadedObservation) return <div className="flex-1">Not found</div>;
   return (
     <Card className="flex-1">
       <CardHeader className="flex flex-row flex-wrap justify-between gap-2">
         <div className="flex flex-col gap-1">
           <CardTitle>
             <span className="mr-2 rounded-sm bg-gray-200 p-1 text-xs">
-              {observation.type}
+              {preloadedObservation.type}
             </span>
-            <span>{observation.name}</span>
+            <span>{preloadedObservation.name}</span>
           </CardTitle>
           <CardDescription className="flex gap-2">
-            {observation.startTime.toLocaleString()}
+            {preloadedObservation.startTime.toLocaleString()}
           </CardDescription>
           <div className="flex flex-wrap gap-2">
-            {observation.endTime ? (
+            {preloadedObservation.endTime ? (
               <Badge variant="outline">
                 {`${(
-                  (observation.endTime.getTime() -
-                    observation.startTime.getTime()) /
+                  (preloadedObservation.endTime.getTime() -
+                    preloadedObservation.startTime.getTime()) /
                   1000
                 ).toFixed(2)} sec`}
               </Badge>
             ) : null}
             <Badge variant="outline">
-              {observation.promptTokens} prompt → {observation.completionTokens}{" "}
-              completion (∑ {observation.totalTokens})
+              {preloadedObservation.promptTokens} prompt →{" "}
+              {preloadedObservation.completionTokens} completion (∑{" "}
+              {preloadedObservation.totalTokens})
             </Badge>
-            {observation.version ? (
-              <Badge variant="outline">Version: {observation.version}</Badge>
-            ) : undefined}
-            {observation.model ? (
-              <Badge variant="outline">{observation.model}</Badge>
-            ) : null}
-            {observation.price ? (
+            {preloadedObservation.version ? (
               <Badge variant="outline">
-                {observation.price.toString()} USD
+                Version: {preloadedObservation.version}
               </Badge>
             ) : undefined}
-            {observation.modelParameters &&
-            typeof observation.modelParameters === "object"
-              ? Object.entries(observation.modelParameters)
+            {preloadedObservation.model ? (
+              <Badge variant="outline">{preloadedObservation.model}</Badge>
+            ) : null}
+            {preloadedObservation.price ? (
+              <Badge variant="outline">
+                {preloadedObservation.price.toString()} USD
+              </Badge>
+            ) : undefined}
+            {preloadedObservation.modelParameters &&
+            typeof preloadedObservation.modelParameters === "object"
+              ? Object.entries(preloadedObservation.modelParameters)
                   .filter(Boolean)
                   .map(([key, value]) => (
                     <Badge variant="outline" key={key}>
@@ -83,41 +100,49 @@ export const ObservationPreview = (props: {
         <div className="flex gap-2">
           <ManualScoreButton
             projectId={props.projectId}
-            traceId={observation.traceId}
-            observationId={observation.id}
+            traceId={preloadedObservation.traceId}
+            observationId={preloadedObservation.id}
             scores={props.scores}
           />
-          <NewDatasetItemFromObservationButton
-            observationId={observation.id}
-            projectId={props.projectId}
-            observationInput={observation.input}
-            observationOutput={observation.output}
-            key={observation.id}
-          />
+          {observationWithInputAndOutput.data ? (
+            <NewDatasetItemFromObservationButton
+              observationId={preloadedObservation.id}
+              projectId={props.projectId}
+              observationInput={observationWithInputAndOutput.data.input}
+              observationOutput={observationWithInputAndOutput.data.output}
+              key={preloadedObservation.id}
+            />
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <JSONView
-          key={observation.id + "-input"}
-          title={observation.type === "GENERATION" ? "Prompt" : "Input"}
-          json={observation.input}
+        <ObservationIO
+          key={preloadedObservation.id + "-input"}
+          observationType={preloadedObservation.type}
+          input={observationWithInputAndOutput.data?.input ?? undefined}
+          output={observationWithInputAndOutput.data?.output ?? undefined}
+          isLoading={observationWithInputAndOutput.isLoading}
         />
-        <JSONView
-          key={observation.id + "-output"}
-          title={observation.type === "GENERATION" ? "Completion" : "Output"}
-          json={observation.output}
-        />
-        <JSONView
-          key={observation.id + "-status"}
-          title="Status Message"
-          json={observation.statusMessage}
-        />
-        <JSONView
-          key={observation.id + "-metadata"}
-          title="Metadata"
-          json={observation.metadata}
-        />
-        {props.scores.find((s) => s.observationId === observation.id) ? (
+
+        {preloadedObservation.statusMessage ? (
+          <JSONView
+            key={preloadedObservation.id + "-status"}
+            title="Status Message"
+            json={preloadedObservation.statusMessage}
+          />
+        ) : null}
+
+        {preloadedObservation.metadata ? (
+          <JSONView
+            key={preloadedObservation.id + "-metadata"}
+            title="Metadata"
+            json={preloadedObservation.metadata}
+          />
+        ) : null}
+
+        {props.scores.find(
+          (s) => s.observationId === preloadedObservation.id,
+        ) ? (
           <div className="flex flex-col gap-2">
             <h3>Scores</h3>
             <Table>
@@ -131,7 +156,7 @@ export const ObservationPreview = (props: {
               </TableHeader>
               <TableBody>
                 {props.scores
-                  .filter((s) => s.observationId === observation.id)
+                  .filter((s) => s.observationId === preloadedObservation.id)
                   .map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="text-xs">
@@ -150,5 +175,149 @@ export const ObservationPreview = (props: {
         ) : null}
       </CardContent>
     </Card>
+  );
+};
+
+const ObservationIO: React.FC<{
+  observationType: string;
+  input?: unknown;
+  output?: unknown;
+  isLoading: boolean;
+}> = ({ isLoading, ...props }) => {
+  const [currentView, setCurrentView] = useState<"pretty" | "json">("pretty");
+
+  const input = deepParseJson(props.input);
+  const output = deepParseJson(props.output);
+
+  // parse old completions: { completion: string } -> string
+  const outLegacyCompletionSchema = z
+    .object({
+      completion: z.string(),
+    })
+    .refine((value) => Object.keys(value).length === 1);
+  const outLegacyCompletionSchemaParsed =
+    outLegacyCompletionSchema.safeParse(output);
+  const outputClean = outLegacyCompletionSchemaParsed.success
+    ? outLegacyCompletionSchemaParsed.data
+    : props.output ?? null;
+
+  // OpenAI messages
+  let inOpenAiMessageArray = OpenAiMessageArraySchema.safeParse(input);
+  if (!inOpenAiMessageArray.success) {
+    // check if input is an array of length 1 including an array of OpenAiMessageSchema
+    // this is the case for some integrations
+    const inputArray = z.array(OpenAiMessageArraySchema).safeParse(input);
+    if (inputArray.success && inputArray.data.length === 1) {
+      inOpenAiMessageArray = OpenAiMessageArraySchema.safeParse(
+        inputArray.data[0],
+      );
+    }
+  }
+  const outOpenAiMessage = OpenAiMessageSchema.safeParse(output);
+
+  // Pretty view available
+  const isPrettyViewAvailable = inOpenAiMessageArray.success;
+
+  // default I/O
+  return (
+    <>
+      {isPrettyViewAvailable ? (
+        <Tabs
+          value={currentView}
+          onValueChange={(v) => setCurrentView(v as "pretty" | "json")}
+        >
+          <TabsList>
+            <TabsTrigger value="pretty">Pretty ✨</TabsTrigger>
+            <TabsTrigger value="json">JSON</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      ) : null}
+      {isPrettyViewAvailable && currentView === "pretty" ? (
+        inOpenAiMessageArray.success ? (
+          <OpenAiMessageView
+            messages={inOpenAiMessageArray.data.concat(
+              outOpenAiMessage.success
+                ? {
+                    ...outOpenAiMessage.data,
+                    role: outOpenAiMessage.data.role ?? "assistant",
+                  }
+                : {
+                    role: "assistant",
+                    content: JSON.stringify(outputClean) ?? null,
+                  },
+            )}
+          />
+        ) : null
+      ) : null}
+      {currentView === "json" || !isPrettyViewAvailable ? (
+        <>
+          <JSONView
+            title="Input"
+            json={input ?? null}
+            isLoading={isLoading}
+            className="flex-1"
+          />
+          <JSONView
+            title="Output"
+            json={outputClean}
+            isLoading={isLoading}
+            className="flex-1"
+          />
+        </>
+      ) : null}
+    </>
+  );
+};
+
+const OpenAiMessageSchema = z
+  .object({
+    role: z.enum(["system", "user", "assistant"]).optional(),
+    content: z.string().nullable(),
+  })
+  .refine((value) => value.content !== null || value.role !== undefined);
+
+const OpenAiMessageArraySchema = z.array(OpenAiMessageSchema).min(1);
+
+const OpenAiMessageView: React.FC<{
+  messages: z.infer<typeof OpenAiMessageArraySchema>;
+}> = ({ messages }) => {
+  const COLLAPSE_THRESHOLD = 3;
+  const [isCollapsed, setCollapsed] = useState(
+    messages.length > COLLAPSE_THRESHOLD ? true : null,
+  );
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-3">
+      {messages
+        .filter(
+          (_, i) =>
+            // show all if not collapsed or null; show first and last n if collapsed
+            !isCollapsed || i == 0 || i > messages.length - COLLAPSE_THRESHOLD,
+        )
+        .map((message, index) => (
+          <>
+            <JSONView
+              title={message.role}
+              json={message.content}
+              key={index}
+              className={cn(
+                message.role === "system" && "bg-gray-100",
+                message.role === "assistant" && "bg-green-50",
+              )}
+            />
+            {isCollapsed !== null && index === 0 ? (
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => setCollapsed((v) => !v)}
+              >
+                {isCollapsed
+                  ? `Show ${messages.length - COLLAPSE_THRESHOLD} more ...`
+                  : "Hide history"}
+              </Button>
+            ) : null}
+          </>
+        ))}
+    </div>
   );
 };
